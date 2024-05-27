@@ -22,7 +22,7 @@ app.config.update(
 )
 celery = make_celery(app)
 
-BATCH_SIZE = 10  # Number of requests to batch together
+BATCH_SIZE = 50000  # Number of requests to batch together
 POLL_INTERVAL = 10  # Time in seconds to wait between polling
 MAX_RETRY_ATTEMPTS = 2  # Maximum number of retry attempts for failed requests
 

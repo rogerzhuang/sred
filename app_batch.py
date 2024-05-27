@@ -24,7 +24,7 @@ celery = make_celery(app)
 
 BATCH_SIZE = 50000  # Number of requests to batch together
 POLL_INTERVAL = 10  # Time in seconds to wait between polling
-MAX_RETRY_ATTEMPTS = 2  # Maximum number of retry attempts for failed requests
+MAX_RETRY_ATTEMPTS = 1  # Maximum number of retry attempts for failed requests
 
 @celery.task(name='app_batch.process_batch')
 def process_batch(batch_data, retry_count=0):

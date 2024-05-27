@@ -12,11 +12,12 @@ load_dotenv()
 app = Flask(__name__)
 
 client = OpenAI()
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 # Configure Celery
 app.config.update(
-    CELERY_BROKER_URL='redis://localhost:6379/0',
-    CELERY_RESULT_BACKEND='redis://localhost:6379/0',
+    CELERY_BROKER_URL=redis_url,
+    CELERY_RESULT_BACKEND=redis_url,
 )
 celery = make_celery(app)
 

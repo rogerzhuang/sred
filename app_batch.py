@@ -12,7 +12,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
-client = OpenAI()
+# Load OpenAI API keys from environment variables
+api_keys = os.getenv('OPENAI_API_KEYS').split(',')
+
+# Configure Redis URL
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 # Configure Celery
@@ -25,29 +28,38 @@ celery = make_celery(app)
 BATCH_SIZE = 50000  # Number of requests to batch together
 POLL_INTERVAL = 10  # Time in seconds to wait between polling
 MAX_RETRY_ATTEMPTS = 1  # Maximum number of retry attempts for failed requests
+MAX_API_KEY_RETRY = len(api_keys)  # Maximum retry attempts for different API keys
 
 @celery.task(name='app_batch.process_batch')
-def process_batch(batch_data, retry_count=0):
+def process_batch(batch_data, api_key_index=0, retry_count=0):
+    current_api_key = api_keys[api_key_index]
+    client = OpenAI(api_key=current_api_key)
+    print("Using API Key: ", current_api_key)
     print("Task started with batch_data: ", batch_data)
+
     try:
-        batch_input_file_id = upload_batch_file(batch_data)
+        batch_input_file_id = upload_batch_file(client, batch_data)
         print("Batch input file ID: ", batch_input_file_id)
-        batch_id = create_batch(batch_input_file_id)
+        batch_id = create_batch(client, batch_input_file_id)
         print("Batch ID: ", batch_id)
 
         # Poll for batch status
         while True:
-            status_response = get_batch_status(batch_id)
+            status_response = get_batch_status(client, batch_id)
             print("status_response: ", status_response)
             status = status_response.status
             if status == 'completed':
                 break
             elif status in ['failed', 'expired']:
+                error_code = status_response.errors.data[0].code if status_response.errors else 'unknown_error'
+                if error_code == 'token_limit_exceeded' and api_key_index + 1 < MAX_API_KEY_RETRY:
+                    print("Rate limit reached. Retrying with next API key.")
+                    return process_batch(batch_data, api_key_index=api_key_index+1, retry_count=retry_count)
                 process_batch.update_state(state='FAILURE', meta={'exc_type': 'CeleryError', 'exc_message': f'Batch processing failed with status: {status}'})
                 raise CeleryError(f'Batch processing failed with status: {status}')
             time.sleep(POLL_INTERVAL)
 
-        results, errors = get_batch_results(batch_id)
+        results, errors = get_batch_results(client, batch_id)
         print("Results: ", results)
         print("Errors: ", errors)
 
@@ -57,7 +69,7 @@ def process_batch(batch_data, retry_count=0):
             if failed_requests:
                 print("Retrying failed requests: ", failed_requests)
                 failed_data = [item for item in batch_data if item['custom_id'] in failed_requests]
-                retry_results = process_batch(failed_data, retry_count=retry_count+1)
+                retry_results = process_batch(failed_data, api_key_index=api_key_index, retry_count=retry_count+1)
                 results.extend(retry_results.get('results', []))
 
         return {'results': results}
@@ -65,8 +77,7 @@ def process_batch(batch_data, retry_count=0):
         print("Error in process_batch: ", str(e))
         raise e
 
-
-def upload_batch_file(batch_data):
+def upload_batch_file(client, batch_data):
     print("Uploading batch file with data: ", batch_data)
     try:
         # Create a .jsonl file for the batch requests
@@ -87,7 +98,7 @@ def upload_batch_file(batch_data):
         print("Error in upload_batch_file: ", str(e))
         raise e
 
-def create_batch(batch_input_file_id):
+def create_batch(client, batch_input_file_id):
     print("Creating batch with input file ID: ", batch_input_file_id)
     try:
         # Create the batch using the uploaded file ID
@@ -103,7 +114,7 @@ def create_batch(batch_input_file_id):
         print("Error in create_batch: ", str(e))
         raise e
 
-def get_batch_status(batch_id):
+def get_batch_status(client, batch_id):
     print("Retrieving batch status for batch ID: ", batch_id)
     try:
         # Retrieve the status of the batch
@@ -112,7 +123,7 @@ def get_batch_status(batch_id):
         print("Error in get_batch_status: ", str(e))
         raise e
 
-def get_batch_results(batch_id):
+def get_batch_results(client, batch_id):
     print("Retrieving batch results for batch ID: ", batch_id)
     try:
         # Retrieve the results of the batch

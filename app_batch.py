@@ -175,7 +175,14 @@ def genai():
 @app.route('/status/<job_id>', methods=['GET'])
 def job_status(job_id):
     task = AsyncResult(job_id, app=celery)
-    if task.state == 'PENDING':
+    
+    # Check if the job ID exists in the backend
+    if task.state == 'PENDING' and task.result is None:
+        response = {
+            'state': 'FAILURE',
+            'status': 'Job ID does not exist'
+        }
+    elif task.state == 'PENDING':
         response = {
             'state': task.state,
             'status': 'Pending...'

@@ -16,7 +16,7 @@ app = Flask(__name__)
 api_keys = os.getenv('OPENAI_API_KEYS').split(',')
 
 # Configure Redis URL
-redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+redis_url = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
 
 # Configure Celery
 app.config.update(
@@ -38,7 +38,9 @@ def process_batch(batch_data, api_key_index=0, retry_count=0):
     print("Task started with batch_data: ", batch_data)
 
     try:
-        batch_input_file_id = upload_batch_file(client, batch_data)
+        # Get the Celery task ID
+        task_id = process_batch.request.id
+        batch_input_file_id = upload_batch_file(client, batch_data, task_id)
         print("Batch input file ID: ", batch_input_file_id)
         batch_id = create_batch(client, batch_input_file_id)
         print("Batch ID: ", batch_id)
@@ -77,17 +79,18 @@ def process_batch(batch_data, api_key_index=0, retry_count=0):
         print("Error in process_batch: ", str(e))
         raise e
 
-def upload_batch_file(client, batch_data):
+def upload_batch_file(client, batch_data, task_id):
     print("Uploading batch file with data: ", batch_data)
     try:
         # Create a .jsonl file for the batch requests
-        with open('batchinput.jsonl', 'w') as f:
+        file_name = f'batch_input_{task_id}.jsonl'  # <- Modified this line
+        with open(file_name, 'w') as f:
             for item in batch_data:
                 f.write(json.dumps(item) + '\n')
-        print("Batch file content written to batchinput.jsonl")
+        print(f"Batch file content written to {file_name}")
         
         # Upload the batch file to OpenAI
-        with open("batchinput.jsonl", "rb") as f:
+        with open(file_name, "rb") as f:
             batch_input_file = client.files.create(
                 file=f,
                 purpose="batch"

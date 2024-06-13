@@ -241,6 +241,7 @@ async def find_best_match():
             max_similarity = similarity
             best_match_id = idx + 1
 
+    print(f"For entry: {entry}, best match is: {best_match_id} with similarity score: {max_similarity}")
     return jsonify({"best_match_id": best_match_id, "similarity_score": max_similarity})
 
 if __name__ == '__main__':

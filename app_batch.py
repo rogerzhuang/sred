@@ -155,8 +155,8 @@ def get_batch_results(client, batch_id):
         print("Error in get_batch_results: ", str(e))
         raise e
 
-@app.route('/genai', methods=['POST'])
-def genai():
+@app.route('/bcomp', methods=['POST'])
+def bcomp():
     data = request.get_json()
     batch = data.get('batch', [])
     print("batch: ", batch)
@@ -175,7 +175,7 @@ def genai():
         print("Error: ", e)
         return jsonify({'error': str(e)}), 500
 
-@app.route('/status/<job_id>', methods=['GET'])
+@app.route('/bstatus/<job_id>', methods=['GET'])
 def job_status(job_id):
     task = AsyncResult(job_id, app=celery)
     

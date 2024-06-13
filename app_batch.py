@@ -7,6 +7,7 @@ from celery.exceptions import CeleryError
 from celery.result import AsyncResult
 from dotenv import load_dotenv
 from celery_config import make_celery
+import numpy as np
 
 load_dotenv()
 
@@ -199,6 +200,43 @@ def job_status(job_id):
             'status': str(task.info)  # This is the exception raised
         }
     return jsonify(response)
+
+def get_text_embedding(text, model="text-embedding-3-small"):
+    text = text.replace("\n", " ")
+    response = openai.Embedding.create(input=[text], model=model)
+    return response['data'][0]['embedding']
+
+def cosine_similarity(vec1, vec2):
+    dot_product = np.dot(vec1, vec2)
+    norm_vec1 = np.linalg.norm(vec1)
+    norm_vec2 = np.linalg.norm(vec2)
+    return dot_product / (norm_vec1 * norm_vec2)
+
+def calculate_similarity(text1, text2, model="text-embedding-3-small"):
+    embedding1 = get_text_embedding(text1, model=model)
+    embedding2 = get_text_embedding(text2, model=model)
+    similarity = cosine_similarity(embedding1, embedding2)
+    return similarity
+
+@app.route('/find_project', methods=['POST'])
+def find_most_relevant_project():
+    data = request.get_json()
+    entry = data.get('entry')
+    projects = data.get('projects')
+
+    if not entry or not projects:
+        return jsonify({"error": "Invalid input"}), 400
+
+    max_similarity = -1
+    most_relevant_project_id = None
+
+    for idx, project in enumerate(projects):
+        similarity = calculate_similarity(entry, project)
+        if similarity > max_similarity:
+            max_similarity = similarity
+            most_relevant_project_id = idx + 1
+
+    return jsonify({"most_relevant_project_id": most_relevant_project_id, "similarity_score": max_similarity})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

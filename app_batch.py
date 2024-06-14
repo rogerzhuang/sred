@@ -154,8 +154,8 @@ def get_batch_results(client, batch_id):
         print("Error in get_batch_results: ", str(e))
         raise e
 
-@app.route('/bcomp', methods=['POST'])
-def bcomp():
+@app.route('/bproc', methods=['POST'])
+def bproc():
     data = request.get_json()
     batch = data.get('batch', [])
     endpoint = data.get('endpoint', '/v1/chat/completions')  # Default to completions endpoint

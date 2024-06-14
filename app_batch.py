@@ -45,7 +45,7 @@ def process_batch(batch_data, endpoint, api_key_index=0, retry_count=0):
         task_id = process_batch.request.id
         batch_input_file_id = upload_batch_file(client, batch_data, task_id)
         print("Batch input file ID: ", batch_input_file_id)
-        batch_id = create_batch(client, batch_input_file_id)
+        batch_id = create_batch(client, batch_input_file_id, endpoint)
         print("Batch ID: ", batch_id)
 
         # Poll for batch status

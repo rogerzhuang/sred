@@ -34,7 +34,7 @@ MAX_API_KEY_RETRY = len(api_keys)  # Maximum retry attempts for different API ke
 EMBEDDING_ENGINE = "text-embedding-3-small"
 
 @celery.task(name='app_batch.process_batch')
-def process_batch(batch_data, api_key_index=0, retry_count=0):
+def process_batch(batch_data, endpoint, api_key_index=0, retry_count=0):
     current_api_key = api_keys[api_key_index]
     client = OpenAI(api_key=current_api_key)
     print("Using API Key: ", current_api_key)
@@ -59,7 +59,7 @@ def process_batch(batch_data, api_key_index=0, retry_count=0):
                 error_code = status_response.errors.data[0].code if status_response.errors else 'unknown_error'
                 if error_code == 'token_limit_exceeded' and api_key_index + 1 < MAX_API_KEY_RETRY:
                     print("Rate limit reached. Retrying with next API key.")
-                    return process_batch(batch_data, api_key_index=api_key_index+1, retry_count=retry_count)
+                    return process_batch(batch_data, endpoint, api_key_index=api_key_index+1, retry_count=retry_count)
                 process_batch.update_state(state='FAILURE', meta={'exc_type': 'CeleryError', 'exc_message': f'Batch processing failed with status: {status}'})
                 raise CeleryError(f'Batch processing failed with status: {status}')
             time.sleep(POLL_INTERVAL)
@@ -74,7 +74,7 @@ def process_batch(batch_data, api_key_index=0, retry_count=0):
             if failed_requests:
                 print("Retrying failed requests: ", failed_requests)
                 failed_data = [item for item in batch_data if item['custom_id'] in failed_requests]
-                retry_results = process_batch(failed_data, api_key_index=api_key_index, retry_count=retry_count+1)
+                retry_results = process_batch(failed_data, endpoint, api_key_index=api_key_index, retry_count=retry_count+1)
                 results.extend(retry_results.get('results', []))
 
         return {'results': results}
@@ -104,13 +104,13 @@ def upload_batch_file(client, batch_data, task_id):
         print("Error in upload_batch_file: ", str(e))
         raise e
 
-def create_batch(client, batch_input_file_id):
+def create_batch(client, batch_input_file_id, endpoint):
     print("Creating batch with input file ID: ", batch_input_file_id)
     try:
         # Create the batch using the uploaded file ID
         batch = client.batches.create(
             input_file_id=batch_input_file_id,
-            endpoint="/v1/chat/completions",
+            endpoint=endpoint,
             completion_window="24h",
             metadata={"description": "batch processing job"}
         )
@@ -159,7 +159,9 @@ def get_batch_results(client, batch_id):
 def bcomp():
     data = request.get_json()
     batch = data.get('batch', [])
+    endpoint = data.get('endpoint', '/v1/chat/completions')  # Default to completions endpoint
     print("batch: ", batch)
+    print("endpoint: ", endpoint)
     if not batch:
         return jsonify({'error': 'Batch data is required'}), 400
     
@@ -168,7 +170,7 @@ def bcomp():
         return jsonify({'error': f'Batch size exceeds the limit of {BATCH_SIZE}'}), 400
 
     try:
-        task = process_batch.apply_async(args=[batch])
+        task = process_batch.apply_async(args=[batch, endpoint])
         print("Task ID: ", task.id)
         return jsonify({'job_id': task.id}), 202
     except Exception as e:

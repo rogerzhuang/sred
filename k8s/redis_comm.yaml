@@ -1,0 +1,36 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-commander
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-commander
+  template:
+    metadata:
+      labels:
+        app: redis-commander
+    spec:
+      containers:
+        - name: redis-commander
+          image: rediscommander/redis-commander:latest
+          env:
+            - name: REDIS_HOSTS
+              value: "instance1:redis-service-0.redis-service-headless.default.svc.cluster.local:6379,instance2:redis-service-1.redis-service-headless.default.svc.cluster.local:6379,instance3:redis-service-2.redis-service-headless.default.svc.cluster.local:6379,instance4:redis-service-3.redis-service-headless.default.svc.cluster.local:6379,instance5:redis-service-4.redis-service-headless.default.svc.cluster.local:6379,instance6:redis-service-5.redis-service-headless.default.svc.cluster.local:6379"
+          ports:
+            - containerPort: 8081
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-commander
+spec:
+  selector:
+    app: redis-commander
+  ports:
+    - protocol: TCP
+      port: 8081
+      targetPort: 8081
+  type: NodePort

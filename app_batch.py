@@ -5,101 +5,135 @@ import time
 import json
 from celery.exceptions import CeleryError
 from celery.result import AsyncResult
+from celery.states import PENDING, SUCCESS, FAILURE, RETRY
 from dotenv import load_dotenv
 from celery_config import make_celery
 import numpy as np
 import asyncio
+from minio import Minio
+from minio.error import S3Error
+import io
+import logging
 
 load_dotenv()
 
 app = Flask(__name__)
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Load OpenAI API keys from environment variables
 api_keys = os.getenv('OPENAI_API_KEYS').split(',')
 
-# Configure Redis URL
-redis_url = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
+# Configure RabbitMQ URL
+rabbitmq_username = os.getenv('RABBITMQ_ACCESS_KEY')
+rabbitmq_password = os.getenv('RABBITMQ_SECRET_KEY')
+rabbitmq_host = os.getenv('RABBITMQ_HOST', 'localhost')
+rabbitmq_url = f'amqp://{rabbitmq_username}:{rabbitmq_password}@{rabbitmq_host}:5672/'
+
 
 # Configure Celery
 app.config.update(
-    CELERY_BROKER_URL=redis_url,
-    CELERY_RESULT_BACKEND=redis_url,
+    CELERY_BROKER_URL=rabbitmq_url,
 )
 celery = make_celery(app)
+
+# Initialize MinIO client
+minio_url = os.getenv('MINIO_URL', 'localhost:9000')
+minio_client = Minio(
+    minio_url,
+    access_key=os.getenv('MINIO_ACCESS_KEY'),
+    secret_key=os.getenv('MINIO_SECRET_KEY'),
+    secure=False
+)
 
 BATCH_SIZE = 50000  # Number of requests to batch together
 POLL_INTERVAL = 10  # Time in seconds to wait between polling
 MAX_RETRY_ATTEMPTS = 1  # Maximum number of retry attempts for failed requests
 MAX_API_KEY_RETRY = len(api_keys)  # Maximum retry attempts for different API keys
 
-@celery.task(name='app_batch.process_batch')
-def process_batch(batch_data, endpoint, api_key_index=0, retry_count=0):
+@celery.task(name='app_batch.process_batch', bind=True)
+def process_batch(self, batch_data, endpoint, api_key_index=0, retry_count=0):
+    logger.info(f"Result backend: {self.app.conf.result_backend}")
+    logger.info(f"Starting process_batch with {len(batch_data)} items, endpoint: {endpoint}")
     current_api_key = api_keys[api_key_index]
     client = OpenAI(api_key=current_api_key)
-    print("Using API Key: ", current_api_key)
-    print("Task started with batch_data: ", batch_data)
+    logger.info(f"Using API Key: {current_api_key[:5]}...{current_api_key[-5:]}")
 
     try:
-        # Get the Celery task ID
-        task_id = process_batch.request.id
+        task_id = self.request.id
         batch_input_file_id = upload_batch_file(client, batch_data, task_id)
-        print("Batch input file ID: ", batch_input_file_id)
+        logger.info(f"Batch input file ID: {batch_input_file_id}")
         batch_id = create_batch(client, batch_input_file_id, endpoint)
-        print("Batch ID: ", batch_id)
+        logger.info(f"Batch ID: {batch_id}")
 
-        # Poll for batch status
         while True:
             status_response = get_batch_status(client, batch_id)
-            print("status_response: ", status_response)
+            logger.info(f"Batch status: {status_response.status}")
             status = status_response.status
             if status == 'completed':
                 break
             elif status in ['failed', 'expired']:
                 error_code = status_response.errors.data[0].code if status_response.errors else 'unknown_error'
+                logger.error(f"Batch processing failed with status: {status}, error code: {error_code}")
                 if error_code == 'token_limit_exceeded' and api_key_index + 1 < MAX_API_KEY_RETRY:
-                    print("Rate limit reached. Retrying with next API key.")
+                    logger.info("Rate limit reached. Retrying with next API key.")
                     return process_batch(batch_data, endpoint, api_key_index=api_key_index+1, retry_count=retry_count)
-                process_batch.update_state(state='FAILURE', meta={'exc_type': 'CeleryError', 'exc_message': f'Batch processing failed with status: {status}'})
                 raise CeleryError(f'Batch processing failed with status: {status}')
             time.sleep(POLL_INTERVAL)
 
         results, errors = get_batch_results(client, batch_id)
-        print("Results: ", results)
-        print("Errors: ", errors)
+        logger.info(f"Batch processing completed. Results count: {len(results)}, Errors count: {len(errors)}")
 
-        # Retry failed requests
         if errors and retry_count < MAX_RETRY_ATTEMPTS:
             failed_requests = [item['custom_id'] for item in errors if item.get('response', {}).get('status_code') == 400]
             if failed_requests:
-                print("Retrying failed requests: ", failed_requests)
+                logger.info(f"Retrying {len(failed_requests)} failed requests")
                 failed_data = [item for item in batch_data if item['custom_id'] in failed_requests]
                 retry_results = process_batch(failed_data, endpoint, api_key_index=api_key_index, retry_count=retry_count+1)
                 results.extend(retry_results.get('results', []))
 
+        # Explicitly update task state
+        self.update_state(state='SUCCESS', meta={'results': results})
         return {'results': results}
     except Exception as e:
-        print("Error in process_batch: ", str(e))
-        raise e
+        logger.exception(f"Error in process_batch: {str(e)}")
+        # Explicitly update task state on failure
+        self.update_state(state='FAILURE', meta={'error': str(e)})
+        raise
 
 def upload_batch_file(client, batch_data, task_id):
     print("Uploading batch file with data: ", batch_data)
     try:
+        # Ensure the bucket exists
+        bucket_name = "batch-inputs"
+        if not minio_client.bucket_exists(bucket_name):
+            minio_client.make_bucket(bucket_name)
+
         # Create a .jsonl file for the batch requests
-        file_name = f'batch_input_{task_id}.jsonl'  # <- Modified this line
-        with open(file_name, 'w') as f:
-            for item in batch_data:
-                f.write(json.dumps(item) + '\n')
-        print(f"Batch file content written to {file_name}")
+        file_name = f'batch_input_{task_id}.jsonl'
+        file_data = io.BytesIO()
+        for item in batch_data:
+            file_data.write((json.dumps(item) + '\n').encode('utf-8'))
+        file_data.seek(0)
+        
+        # Upload the batch file to MinIO
+        minio_client.put_object(
+            "batch-inputs",
+            file_name,
+            file_data,
+            length=file_data.getbuffer().nbytes,
+            content_type="application/jsonl"
+        )
         
         # Upload the batch file to OpenAI
-        with open(file_name, "rb") as f:
-            batch_input_file = client.files.create(
-                file=f,
-                purpose="batch"
-            )
-        print("Batch file uploaded, file ID: ", batch_input_file.id)
+        batch_input_file = client.files.create(
+            file=file_data,
+            purpose="batch"
+        )
         return batch_input_file.id
-    except Exception as e:
+    except S3Error as e:
         print("Error in upload_batch_file: ", str(e))
         raise e
 
@@ -156,11 +190,11 @@ def get_batch_results(client, batch_id):
 
 @app.route('/bproc', methods=['POST'])
 def bproc():
+    logger.info("Received request to /bproc")
     data = request.get_json()
     batch = data.get('batch', [])
     endpoint = data.get('endpoint', '/v1/chat/completions')  # Default to completions endpoint
-    print("batch: ", batch)
-    print("endpoint: ", endpoint)
+    logger.info(f"Batch size: {batch}, Endpoint: {endpoint}")
     if not batch:
         return jsonify({'error': 'Batch data is required'}), 400
     
@@ -178,25 +212,45 @@ def bproc():
 
 @app.route('/bstatus/<job_id>', methods=['GET'])
 def job_status(job_id):
-    task = AsyncResult(job_id, app=celery)
-    
-    if task.state == 'PENDING':
-        response = {
-            'state': task.state,
-            'status': 'Pending...'
-        }
-    elif task.state != 'FAILURE':
-        response = {
-            'state': task.state,
-            'status': task.info.get('status', ''),
-            'result': task.info.get('results', [])
-        }
-    else:
-        response = {
-            'state': task.state,
-            'status': str(task.info)  # This is the exception raised
-        }
-    return jsonify(response)
+    logger.info(f"Checking status for job: {job_id}")
+    try:
+        task = AsyncResult(job_id, app=celery)
+        logger.info(f"Raw task state: {task.state}")
+        logger.info(f"Task result: {task.result}")
+        
+        if task.state == PENDING:
+            response = {
+                'state': 'PENDING',
+                'status': 'Task is pending or not found'
+            }
+        elif task.state == SUCCESS:
+            response = {
+                'state': 'SUCCESS',
+                'status': 'Task has completed successfully',
+                'result': task.result
+            }
+        elif task.state == FAILURE:
+            response = {
+                'state': 'FAILURE',
+                'status': 'Task has failed',
+                'error': str(task.result) if task.result else 'Unknown error'
+            }
+        elif task.state == RETRY:
+            response = {
+                'state': 'RETRY',
+                'status': 'Task is being retried'
+            }
+        else:
+            response = {
+                'state': task.state,
+                'status': 'Task is in progress or in an unknown state'
+            }
+        
+        logger.info(f"Returning response: {response}")
+        return jsonify(response)
+    except Exception as e:
+        logger.exception(f"Error checking task status: {str(e)}")
+        return jsonify({'state': 'ERROR', 'status': 'Error checking task status'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

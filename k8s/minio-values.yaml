@@ -1,0 +1,44 @@
+mode: distributed
+replicas: 4
+
+auth:
+  rootUser: "minio"
+  rootPassword: "minio123"
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+resources:
+  requests:
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  ports:
+    api: 9000
+    console: 9001
+
+ingress:
+  enabled: false
+  # Configure this if you want to expose MinIO externally
+  # hostname: minio.local
+
+networkPolicy:
+  enabled: true
+
+metrics:
+  prometheusAuthType: public
+
+# Additional configurations
+tls:
+  enabled: false # Enable if you want to use TLS
+
+statefulset:
+  updateStrategy:
+    type: RollingUpdate
+
+provisioning:
+  enabled: false # Enable if you want to use MinIO's provisioning features
+
+extraEnvVars: []

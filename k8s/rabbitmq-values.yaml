@@ -1,0 +1,43 @@
+replicaCount: 3
+
+auth:
+  username: admin
+  password: rabbitmq123
+
+persistence:
+  enabled: true
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+
+rabbitmq:
+  extraConfiguration: |
+    load_definitions = /app/load_definition.json
+
+extraSecrets:
+  load-definition:
+    load_definition.json: |
+      {
+        "rabbit_version": "3.8.5",
+        "vhosts": [
+          {
+            "name": "/"
+          }
+        ],
+        "policies": [
+          {
+            "vhost": "/",
+            "name": "ha-all",
+            "pattern": ".*",
+            "apply-to": "all",
+            "definition": {
+              "ha-mode": "all",
+              "ha-sync-mode": "automatic"
+            }
+          }
+        ]
+      }
+
+loadDefinition:
+  enabled: true
+  existingSecret: load-definition

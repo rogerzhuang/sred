@@ -1,0 +1,272 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-bproc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: genai-bproc
+  template:
+    metadata:
+      labels:
+        app: genai-bproc
+    spec:
+      containers:
+        - name: genai-bproc
+          image: rogerzhuang/genai-bproc:latest
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1024Mi"
+              cpu: "1000m"
+          ports:
+            - containerPort: 5000
+          env:
+            - name: RABBITMQ_HOST
+              value: "rabbitmq-service"
+            - name: RABBITMQ_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: access-key
+            - name: RABBITMQ_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: secret-key
+            - name: POSTGRES_HOST
+              value: "pg-service-postgresql-ha-pgpool"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: MINIO_URL
+              value: "minio-service:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: secret-key
+            - name: OPENAI_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api-keys
+                  key: api-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-bproc-service
+spec:
+  selector:
+    app: genai-bproc
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: rogerzhuang/genai-bproc:latest
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1024Mi"
+              cpu: "1000m"
+          command:
+            [
+              "celery",
+              "-A",
+              "app_batch.celery",
+              "worker",
+              "--loglevel=info",
+              "-P",
+              "eventlet",
+            ]
+          env:
+            - name: RABBITMQ_HOST
+              value: "rabbitmq-service"
+            - name: RABBITMQ_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: access-key
+            - name: RABBITMQ_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: secret-key
+            - name: POSTGRES_HOST
+              value: "pg-service-postgresql-ha-pgpool"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: MINIO_URL
+              value: "minio-service:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: secret-key
+            - name: OPENAI_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api-keys
+                  key: api-keys
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+spec:
+  serviceName: "minio-headless"
+  replicas: 4
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: secret-key
+          image: minio/minio:RELEASE.2023-06-23T20-26-00Z
+          args:
+            - server
+            - http://minio-0.minio-headless.default.svc.cluster.local/data
+            - http://minio-1.minio-headless.default.svc.cluster.local/data
+            - http://minio-2.minio-headless.default.svc.cluster.local/data
+            - http://minio-3.minio-headless.default.svc.cluster.local/data
+          ports:
+            - containerPort: 9000
+              name: minio
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: minio-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-headless
+  labels:
+    app: minio
+spec:
+  ports:
+    - port: 9000
+      name: minio
+  clusterIP: None
+  selector:
+    app: minio
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-service
+spec:
+  type: NodePort
+  ports:
+    - port: 9000
+  selector:
+    app: minio
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: genai-bproc-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: genai-bproc
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: celery-worker-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: celery-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50

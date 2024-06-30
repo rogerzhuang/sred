@@ -1,0 +1,21 @@
+dependencies:
+- name: minio
+  repository: https://charts.bitnami.com/bitnami
+  version: 14.6.16
+- name: rabbitmq
+  repository: https://charts.bitnami.com/bitnami
+  version: 14.4.4
+- name: redis-cluster
+  repository: https://charts.bitnami.com/bitnami
+  version: 10.2.5
+- name: bproc
+  repository: ""
+  version: 0.1.0
+- name: celery-worker
+  repository: ""
+  version: 0.1.0
+- name: redis-commander
+  repository: ""
+  version: 0.1.0
+digest: sha256:100b5ff098735c75e90ca2902374411be1a78a3c75db414eb2247e3cb19afb24
+generated: "2024-06-29T13:43:01.7085688-07:00"

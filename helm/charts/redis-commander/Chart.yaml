@@ -1,0 +1,5 @@
+apiVersion: v2
+name: redis-commander
+description: A Helm chart for Redis Commander
+version: 0.1.0
+type: application

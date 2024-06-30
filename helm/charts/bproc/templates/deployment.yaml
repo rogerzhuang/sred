@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bproc.fullname" . }}
+  labels:
+    {{- include "bproc.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bproc.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bproc.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 5000
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: RABBITMQ_HOST
+              value: {{ .Values.global.rabbitmqHost | quote }}
+            - name: RABBITMQ_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: access-key
+            - name: RABBITMQ_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: secret-key
+            - name: MINIO_URL
+              value: {{ .Values.global.minioUrl | quote }}
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: secret-key
+            - name: REDIS_CLUSTER
+              value: {{ .Values.global.redisCluster | quote }}
+            - name: OPENAI_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api-keys
+                  key: api-keys

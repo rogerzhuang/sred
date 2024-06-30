@@ -1,0 +1,32 @@
+replicaCount: 2
+
+image:
+  repository: rogerzhuang/genai-bproc
+  tag: latest
+
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "500m"
+  limits:
+    memory: "1024Mi"
+    cpu: "1000m"
+
+command:
+  - python
+  - -m
+  - celery
+args:
+  - -A
+  - app_batch.celery
+  - worker
+  - --loglevel=info
+  - -P
+  - eventlet
+# workingDir: /app
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 50

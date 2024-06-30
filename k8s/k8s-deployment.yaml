@@ -2,19 +2,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: genai-bproc
+  name: bproc
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: genai-bproc
+      app: bproc
   template:
     metadata:
       labels:
-        app: genai-bproc
+        app: bproc
     spec:
       containers:
-        - name: genai-bproc
+        - name: bproc
           image: rogerzhuang/genai-bproc:latest
           resources:
             requests:
@@ -38,18 +38,6 @@ spec:
                 secretKeyRef:
                   name: rabbitmq-secret
                   key: secret-key
-            - name: POSTGRES_HOST
-              value: "pg-service-postgresql-ha-pgpool"
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: username
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: password
             - name: MINIO_URL
               value: "minio-service:9000"
             - name: MINIO_ACCESS_KEY
@@ -62,6 +50,8 @@ spec:
                 secretKeyRef:
                   name: minio-secret
                   key: secret-key
+            - name: REDIS_CLUSTER
+              value: "redis-service"
             - name: OPENAI_API_KEYS
               valueFrom:
                 secretKeyRef:
@@ -71,10 +61,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: genai-bproc-service
+  name: bproc-service
 spec:
   selector:
-    app: genai-bproc
+    app: bproc
   ports:
     - protocol: TCP
       port: 80
@@ -128,18 +118,6 @@ spec:
                 secretKeyRef:
                   name: rabbitmq-secret
                   key: secret-key
-            - name: POSTGRES_HOST
-              value: "pg-service-postgresql-ha-pgpool"
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: username
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: password
             - name: MINIO_URL
               value: "minio-service:9000"
             - name: MINIO_ACCESS_KEY
@@ -152,6 +130,8 @@ spec:
                 secretKeyRef:
                   name: minio-secret
                   key: secret-key
+            - name: REDIS_CLUSTER
+              value: "redis-service"
             - name: OPENAI_API_KEYS
               valueFrom:
                 secretKeyRef:
@@ -159,89 +139,50 @@ spec:
                   key: api-keys
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: minio
+  name: redis-commander
 spec:
-  serviceName: "minio-headless"
-  replicas: 4
+  replicas: 1
   selector:
     matchLabels:
-      app: minio
+      app: redis-commander
   template:
     metadata:
       labels:
-        app: minio
+        app: redis-commander
     spec:
       containers:
-        - name: minio
+        - name: redis-commander
+          image: rediscommander/redis-commander:latest
           env:
-            - name: MINIO_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-secret
-                  key: access-key
-            - name: MINIO_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-secret
-                  key: secret-key
-          image: minio/minio:RELEASE.2023-06-23T20-26-00Z
-          args:
-            - server
-            - http://minio-0.minio-headless.default.svc.cluster.local/data
-            - http://minio-1.minio-headless.default.svc.cluster.local/data
-            - http://minio-2.minio-headless.default.svc.cluster.local/data
-            - http://minio-3.minio-headless.default.svc.cluster.local/data
+            - name: REDIS_HOSTS
+              value: "instance1:redis-service-0.redis-service-headless.default.svc.cluster.local:6379,instance2:redis-service-1.redis-service-headless.default.svc.cluster.local:6379,instance3:redis-service-2.redis-service-headless.default.svc.cluster.local:6379,instance4:redis-service-3.redis-service-headless.default.svc.cluster.local:6379,instance5:redis-service-4.redis-service-headless.default.svc.cluster.local:6379,instance6:redis-service-5.redis-service-headless.default.svc.cluster.local:6379"
           ports:
-            - containerPort: 9000
-              name: minio
-          volumeMounts:
-            - name: minio-data
-              mountPath: /data
-  volumeClaimTemplates:
-    - metadata:
-        name: minio-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 1Gi
+            - containerPort: 8081
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: minio-headless
-  labels:
-    app: minio
+  name: redis-commander
 spec:
-  ports:
-    - port: 9000
-      name: minio
-  clusterIP: None
   selector:
-    app: minio
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: minio-service
-spec:
+    app: redis-commander
+  ports:
+    - protocol: TCP
+      port: 8081
+      targetPort: 8081
   type: NodePort
-  ports:
-    - port: 9000
-  selector:
-    app: minio
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: genai-bproc-hpa
+  name: bproc-hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: genai-bproc
+    name: bproc
   minReplicas: 1
   maxReplicas: 10
   metrics:

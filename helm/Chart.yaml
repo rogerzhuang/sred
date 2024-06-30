@@ -1,0 +1,23 @@
+apiVersion: v2
+name: genai-project
+description: A Helm chart for the GenAI project
+version: 0.1.0
+dependencies:
+  - name: minio
+    version: "~14.6.0"
+    repository: "https://charts.bitnami.com/bitnami"
+  - name: rabbitmq
+    version: "~14.4.0"
+    repository: "https://charts.bitnami.com/bitnami"
+  - name: redis-cluster
+    version: "~10.2.0"
+    repository: "https://charts.bitnami.com/bitnami"
+  - name: bproc
+    version: 0.1.0
+    condition: bproc.enabled
+  - name: celery-worker
+    version: 0.1.0
+    condition: celery-worker.enabled
+  - name: redis-commander
+    version: 0.1.0
+    condition: redis-commander.enabled

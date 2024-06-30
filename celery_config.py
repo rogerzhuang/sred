@@ -11,11 +11,7 @@ def make_celery(app):
     # Add Redis Cluster configuration
     celery.conf.update(
         CELERY_RESULT_BACKEND="celery_redis_cluster_backend.redis_cluster.RedisClusterBackend",
-        CELERY_REDIS_CLUSTER_SETTINGS={
-            'startup_nodes': [
-                {"host": "redis-service", "port": "6379"}
-            ]
-        }
+        CELERY_REDIS_CLUSTER_SETTINGS=app.config['CELERY_REDIS_CLUSTER_SETTINGS']
     )
     
     return celery

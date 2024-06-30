@@ -30,12 +30,16 @@ api_keys = os.getenv('OPENAI_API_KEYS').split(',')
 rabbitmq_username = os.getenv('RABBITMQ_ACCESS_KEY')
 rabbitmq_password = os.getenv('RABBITMQ_SECRET_KEY')
 rabbitmq_host = os.getenv('RABBITMQ_HOST', 'localhost')
-rabbitmq_url = f'amqp://{rabbitmq_username}:{rabbitmq_password}@{rabbitmq_host}:5672/'
+rabbitmq_url = f'amqp://{rabbitmq_username}:{rabbitmq_password}@{rabbitmq_host}:5672/bproc'
 
+# Configure Redis Cluster nodes
+redis_cluster = os.getenv('REDIS_CLUSTER', 'localhost')
+redis_settings = {'startup_nodes': [{"host": redis_cluster, "port": '6379'}]}
 
 # Configure Celery
 app.config.update(
     CELERY_BROKER_URL=rabbitmq_url,
+    CELERY_REDIS_CLUSTER_SETTINGS=redis_settings,
 )
 celery = make_celery(app)
 

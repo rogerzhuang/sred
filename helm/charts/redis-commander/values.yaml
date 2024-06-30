@@ -1,0 +1,14 @@
+replicaCount: 1
+
+image:
+  repository: rediscommander/redis-commander
+  tag: latest
+
+service:
+  type: NodePort
+  port: 8081
+  targetPort: 8081
+
+env:
+  - name: REDIS_HOSTS
+    value: "instance1:genai-redis-cluster-0.genai-redis-cluster-headless.default.svc.cluster.local:6379,instance2:genai-redis-cluster-1.genai-redis-cluster-headless.default.svc.cluster.local:6379,instance3:genai-redis-cluster-2.genai-redis-cluster-headless.default.svc.cluster.local:6379,instance4:genai-redis-cluster-3.genai-redis-cluster-headless.default.svc.cluster.local:6379,instance5:genai-redis-cluster-4.genai-redis-cluster-headless.default.svc.cluster.local:6379,instance6:genai-redis-cluster-5.genai-redis-cluster-headless.default.svc.cluster.local:6379"

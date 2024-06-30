@@ -9,24 +9,15 @@ master:
   persistence:
     enabled: true
     size: 1Gi
-  extraEnvVars:
-    - name: ALLOW_EMPTY_PASSWORD
-      value: "yes"
 
 replica:
   replicaCount: 1
   persistence:
     enabled: true
     size: 1Gi
-  extraEnvVars:
-    - name: ALLOW_EMPTY_PASSWORD
-      value: "yes"
 
 sentinel:
   enabled: true
-  extraEnvVars:
-    - name: ALLOW_EMPTY_PASSWORD
-      value: "yes"
 
 service:
   type: ClusterIP
@@ -36,9 +27,6 @@ externalAccess:
   service:
     type: LoadBalancer
     port: 6379
-
-networkPolicy:
-  enabled: false
 
 metrics:
   enabled: true

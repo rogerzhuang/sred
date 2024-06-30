@@ -1,0 +1,19 @@
+minio:
+  service:
+    type: NodePort
+
+rabbitmq:
+  service:
+    type: NodePort
+
+redis-cluster:
+  service:
+    type: NodePort
+
+genai-bproc:
+  service:
+    type: NodePort
+
+redis-commander:
+  service:
+    type: NodePort

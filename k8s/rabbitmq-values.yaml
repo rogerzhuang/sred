@@ -6,9 +6,12 @@ auth:
 
 persistence:
   enabled: true
-  accessModes:
-    - ReadWriteOnce
+  # accessModes:
+  #   - ReadWriteOnce
   size: 1Gi
+
+service:
+  type: ClusterIP
 
 rabbitmq:
   extraConfiguration: |
@@ -18,15 +21,30 @@ extraSecrets:
   load-definition:
     load_definition.json: |
       {
-        "rabbit_version": "3.8.5",
+        "users": [
+          {
+            "name": "admin",
+            "password": "rabbitmq123",
+            "tags": "administrator"
+          }
+        ],
         "vhosts": [
           {
-            "name": "/"
+            "name": "bproc"
+          }
+        ],
+        "permissions": [
+          {
+            "user": "admin",
+            "vhost": "bproc",
+            "configure": ".*",
+            "write": ".*",
+            "read": ".*"
           }
         ],
         "policies": [
           {
-            "vhost": "/",
+            "vhost": "bproc",
             "name": "ha-all",
             "pattern": ".*",
             "apply-to": "all",

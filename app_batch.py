@@ -256,5 +256,9 @@ def job_status(job_id):
         logger.exception(f"Error checking task status: {str(e)}")
         return jsonify({'state': 'ERROR', 'status': 'Error checking task status'}), 500
 
+@app.route('/')
+def health_check():
+    return "OK", 200
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

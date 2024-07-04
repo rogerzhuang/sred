@@ -1,0 +1,66 @@
+# MinIO configuration
+minio:
+  service:
+    type: ClusterIP
+  persistence:
+    storageClass: gp2
+
+# RabbitMQ configuration
+rabbitmq:
+  service:
+    type: ClusterIP
+  persistence:
+    storageClass: gp2
+
+# Redis configuration
+redis-cluster:
+  persistence:
+    storageClass: gp2
+  service:
+    type: ClusterIP
+
+# GenAI Batch Processing configuration
+bproc:
+  service:
+    type: ClusterIP
+
+# Celery Worker configuration
+celery-worker:
+  # No changes needed
+
+# Redis Commander configuration
+redis-commander:
+  service:
+    type: ClusterIP
+
+# Add AWS-specific annotations for Ingress resources
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:668946302805:certificate/612dffcb-0f5d-4ef5-a551-c4cd71a7d9a1
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+  hosts:
+    - host: "worker.omnichat.org"
+      paths:
+        - path: /
+          pathType: Prefix
+          service:
+            name: genai-bproc
+            port: 5000
+    - host: "redis.omnichat.org"
+      paths:
+        - path: /
+          pathType: Prefix
+          service:
+            name: genai-redis-commander
+            port: 8081
+
+# Global AWS-specific configurations
+global:
+  storageClass: gp2
+  domain: omnichat.org

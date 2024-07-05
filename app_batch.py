@@ -108,7 +108,7 @@ def process_batch(self, batch_data, endpoint, api_key_index=0, retry_count=0):
         raise
 
 def upload_batch_file(client, batch_data, task_id):
-    print("Uploading batch file with data: ", batch_data)
+    logger.info(f"Uploading batch file with data: {batch_data}")
     try:
         # Ensure the bucket exists
         bucket_name = "batch-inputs"
@@ -138,11 +138,11 @@ def upload_batch_file(client, batch_data, task_id):
         )
         return batch_input_file.id
     except S3Error as e:
-        print("Error in upload_batch_file: ", str(e))
+        logger.error(f"Error in upload_batch_file: {str(e)}")
         raise e
 
 def create_batch(client, batch_input_file_id, endpoint):
-    print("Creating batch with input file ID: ", batch_input_file_id)
+    logger.info(f"Creating batch with input file ID: {batch_input_file_id}")
     try:
         # Create the batch using the uploaded file ID
         batch = client.batches.create(
@@ -151,23 +151,23 @@ def create_batch(client, batch_input_file_id, endpoint):
             completion_window="24h",
             metadata={"description": "batch processing job"}
         )
-        print("Batch created with ID: ", batch.id)
+        logger.info(f"Batch created with ID: {batch.id}")
         return batch.id
     except Exception as e:
-        print("Error in create_batch: ", str(e))
+        logger.error(f"Error in create_batch: {str(e)}")
         raise e
 
 def get_batch_status(client, batch_id):
-    print("Retrieving batch status for batch ID: ", batch_id)
+    logger.info(f"Retrieving batch status for batch ID: {batch_id}")
     try:
         # Retrieve the status of the batch
         return client.batches.retrieve(batch_id)
     except Exception as e:
-        print("Error in get_batch_status: ", str(e))
+        logger.error(f"Error in get_batch_status: {str(e)}")
         raise e
 
 def get_batch_results(client, batch_id):
-    print("Retrieving batch results for batch ID: ", batch_id)
+    logger.info(f"Retrieving batch results for batch ID: {batch_id}")
     try:
         # Retrieve the results of the batch
         batch = client.batches.retrieve(batch_id)
@@ -189,7 +189,7 @@ def get_batch_results(client, batch_id):
 
         return results, errors
     except Exception as e:
-        print("Error in get_batch_results: ", str(e))
+        logger.error(f"Error in get_batch_results: {str(e)}")
         raise e
 
 @app.route('/bproc', methods=['POST'])
@@ -198,7 +198,7 @@ def bproc():
     data = request.get_json()
     batch = data.get('batch', [])
     endpoint = data.get('endpoint', '/v1/chat/completions')  # Default to completions endpoint
-    logger.info(f"Batch size: {batch}, Endpoint: {endpoint}")
+    logger.info(f"Batch size: {len(batch)}, Endpoint: {endpoint}")
     if not batch:
         return jsonify({'error': 'Batch data is required'}), 400
     
@@ -208,10 +208,10 @@ def bproc():
 
     try:
         task = process_batch.apply_async(args=[batch, endpoint])
-        print("Task ID: ", task.id)
+        logger.info(f"Task ID: {task.id}")
         return jsonify({'job_id': task.id}), 202
     except Exception as e:
-        print("Error: ", e)
+        logger.error(f"Error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/bstatus/<job_id>', methods=['GET'])
